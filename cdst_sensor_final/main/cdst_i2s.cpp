@@ -10,12 +10,18 @@
 #include <esp_log.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#ifndef __cplusplus
+extern "C" {
+#endif
 #include "driver/i2s.h"
 #include "driver/uart.h"
 #include "esp_system.h"
+#ifndef __cplusplus
+}
+#endif
 #include "cdst_i2s.h"
 
-static const char* LOG_TAG = "CDSTClient";
+//static const char* LOG_TAG = "CDSTClient";
 
  /* CONNFIGURE THE I2S PORT
 * Mode:             Master, and receiver (RX)
@@ -33,15 +39,15 @@ static const char* LOG_TAG = "CDSTClient";
 * Alloc Flags:      ESP interupt level 1.
 */
 i2s_config_t i2s_config = {
-    .mode = I2S_MODE_MASTER | I2S_MODE_RX,                                  
+    .mode = I2S_GOD_MODE,                                  
     .sample_rate = SAMPLE_RATE,
-    .bits_per_sample = 32,                                              
+    .bits_per_sample = I2S_BITS_PER_SAMPLE_32BIT,                                              
     .channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT,                           
-    .communication_format = I2S_COMM_FORMAT_I2S | I2S_COMM_FORMAT_I2S_MSB | I2S_COMM_FORMAT_PCM,
+    .communication_format = I2S_COMM_FORMAT_GOD,
+    .intr_alloc_flags = 1, 
     .dma_buf_count = 8,
     .dma_buf_len = 64,
-    .use_apll = 1,
-    .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1                                
+    .use_apll = 1                               
 };
 
 /* CONFIGURE I2S PINS
@@ -70,17 +76,16 @@ uart_config_t uart_config = {
 
 /* initialize i2s drivers */
 void i2s_init() {    
-    i2s_driver_install(I2S_NUM, &i2s_config, 0, NULL);
-    i2s_set_pin(I2S_NUM, &pin_config);
-    i2s_set_sample_rates(I2S_NUM, SAMPLE_RATE);
+    i2s_driver_install(I2S_NUM_0, &i2s_config, 0, NULL);
+    i2s_set_pin(I2S_NUM_0, &pin_config);
+    i2s_set_sample_rates(I2S_NUM_0, SAMPLE_RATE);
 }
 
 /* read 1 i2s sample */
 int i2s_read() {
     int read, sample;
-    uint8_t high_byte, low_byte, middle_byte;
 
-    if( (read = i2s_pop_sample(I2S_NUM, (char*)&sample, 0)) == 8 ){
+    if( (read = i2s_pop_sample(I2S_NUM_0, (char*)&sample, 0)) == 8 ){
         sample = sample >> 16;
         sample += 1775;
     }

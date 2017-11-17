@@ -6,6 +6,7 @@
 #include <esp_log.h>
 #include <string>
 #include <sstream>
+#include <sys/time.h>
 #include "BLEDevice.h"
 
 #include "BLEAdvertisedDevice.h"
@@ -15,8 +16,9 @@
 #include "Task.h"
 #include "sdkconfig.h"
 #include "cdst_adc.h"
+#include "cdst_i2s.h"
 
-static const char* LOG_TAG = "CDSTClient";
+static const char* LOG_TAG = "SampleClient";
 
 // See the following for generating UUIDs:
 // https://www.uuidgenerator.net/
@@ -45,6 +47,7 @@ class MyClient: public Task {
 			return;
 		}
 
+
 		// Obtain a reference to the characteristic in the service of the remote BLE server.
 		BLERemoteCharacteristic* pRemoteCharacteristic = pRemoteService->getCharacteristic(charUUID);
 		if (pRemoteCharacteristic == nullptr) {
@@ -57,18 +60,29 @@ class MyClient: public Task {
 		ESP_LOGD(LOG_TAG, "The characteristic value was: %s", value.c_str());
 
 		uint32_t ecg_data;
+		int sample;
 		while(1) {
-			// Set a new value of the ecg characteristic
+			// Set a new value of the characteristic
 			ESP_LOGD(LOG_TAG, "Setting the new value");
-			std::ostringstream stringStream;
+			std::ostringstream ecgStringStream;
+			
+			/* Calls I2S helper function to read from mic */
+			for(int i = 0; i < 20; i++) {
+				std::ostringstream i2sStringStream;
+				sample = i2s_read();
+				i2sStringStream << "i" << sample;
+				ets_printf("i2s: %d\n", sample);
+				pRemoteCharacteristic->writeValue(i2sStringStream.str());
+			}
 
 			/* Calls ADC helper function to read from on-board ADC at GPIO34 */
 			ecg_data = adc_read();
-			stringStream << ecg_data;
-			pRemoteCharacteristic->writeValue(stringStream.str());
+			ecgStringStream << "a" << ecg_data;
+			ets_printf("ecg: %d\n", ecg_data);
+			pRemoteCharacteristic->writeValue(ecgStringStream.str());
 
 			/* sets a time delay to simulate 200Hz sampling rate */
-			FreeRTOS::sleep(5);
+			// FreeRTOS::sleep(5);
 		}
 
 		pClient->disconnect();
