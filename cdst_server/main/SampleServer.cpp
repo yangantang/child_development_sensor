@@ -9,10 +9,9 @@
 #include "esp_log.h"
 #include <string>
 #include <Task.h>
-
 #include "sdkconfig.h"
 
-static char LOG_TAG[] = "SampleServer";
+static char LOG_TAG[] = "CDSTServer";
 
 // See the following for generating UUIDs:
 // https://www.uuidgenerator.net/
@@ -28,7 +27,9 @@ class MyCallbacks: public BLECharacteristicCallbacks {
 				char buf[value.length()];
 				int i;
 
-				//ets_printf("SampleServer: New value for character %s: ", charUUID.toString().c_str());
+				/* Fix for race condition */
+				FreeRTOS::sleep(0.001);
+
 				for(i = 0; i < value.length(); i++) {
 					buf[i] = value[i];
 					ets_write_char_uart(buf[i]);
@@ -43,7 +44,7 @@ class MyCallbacks: public BLECharacteristicCallbacks {
 
 class MainBLEServer: public Task {
 	void run(void *data) {
-		ESP_LOGD(LOG_TAG, "Starting BLE work!");
+		ESP_LOGD(LOG_TAG, "Starting BLE!");
 
 		BLEDevice::init("ESP32");
 		BLEServer* pServer = BLEDevice::createServer();
