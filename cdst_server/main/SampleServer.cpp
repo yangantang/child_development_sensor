@@ -1,5 +1,6 @@
 /**
- * Create a new BLE server.
+ * Create a new BLE server. Then create a wifi connection.
+ * Once receiving fom client, publish through MQTT to AWS.
  */
 #include "BLEDevice.h"
 #include "BLEServer.h"
@@ -9,9 +10,16 @@
 #include "esp_log.h"
 #include <string>
 #include <Task.h>
+#include <AWS.h>
 #include "sdkconfig.h"
+#include "common.h"
+
+using namespace std;
 
 static char LOG_TAG[] = "CDSTServer";
+
+/* wifi helper function definitions */
+void cdstWifiInit(void);
 
 // See the following for generating UUIDs:
 // https://www.uuidgenerator.net/
@@ -22,22 +30,27 @@ static BLEUUID    charUUID("0d563a58-196a-48ce-ace2-dfec78acc814");
 
 class MyCallbacks: public BLECharacteristicCallbacks {
 	void onWrite(BLECharacteristic *pCharacteristic) {
-		std::string value = pCharacteristic->getValue();
-		if (value.length() > 0) {
-				char buf[value.length()];
-				int i;
+		string value = pCharacteristic->getValue();
+		string ecgCheck = "a";
 
-				/* Fix for race condition */
-				FreeRTOS::sleep(0.001);
+		if(value.length() > 0) {
+			/* checking if ecg data */
+			if(value.substr(0, 1) == ecgCheck) {
+				/* publish to AWS IoT */
+				aws->publish("test", value, QOS0);
+			}
 
-				for(i = 0; i < value.length(); i++) {
-					buf[i] = value[i];
-					ets_write_char_uart(buf[i]);
-				}
-				ets_printf("\n");
-				// ESP_LOGD(LOG_TAG, "*********");
-				// ESP_LOGD(LOG_TAG, "New value: %s", buf);
-				// ESP_LOGD(LOG_TAG, "*********");
+			char buf[value.length()];
+			int i;
+
+			/* Fix for race condition */
+			FreeRTOS::sleep(0.001);
+
+			for(i = 0; i < value.length(); i++) {
+				buf[i] = value[i];
+				ets_write_char_uart(buf[i]);
+			}
+			ets_printf("\n");
 			}
 		}
 };
@@ -58,7 +71,7 @@ class MainBLEServer: public Task {
 			BLECharacteristic::PROPERTY_INDICATE
 		);
 
-		pCharacteristic->setCallbacks(new MyCallbacks());
+		// pCharacteristic->setCallbacks(new MyCallbacks());
 
 		pCharacteristic->setValue("What's Up World!");
 
@@ -80,9 +93,13 @@ class MainBLEServer: public Task {
 
 void SampleServer(void)
 {
-	//esp_log_level_set("*", ESP_LOG_DEBUG);
+	/* set up wifi and AWS client */
+	cdstWifiInit();
+	FreeRTOS::sleep(2000);
+
+	/* set up BLE server */
 	MainBLEServer* pMainBleServer = new MainBLEServer();
-	pMainBleServer->setStackSize(20000);
+	pMainBleServer->setStackSize(12000);
 	pMainBleServer->start();
 
 } // app_main
