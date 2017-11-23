@@ -2,14 +2,12 @@
  * Create a new BLE server. Then create a wifi connection.
  * Once receiving fom client, publish through MQTT to AWS.
  */
-#include "BLEDevice.h"
-#include "BLEServer.h"
-#include "BLEUtils.h"
-#include "BLE2902.h"
 #define LOG_LOCAL_LEVEL ESP_LOG_DEBUG
 #include "esp_log.h"
 #include <string>
 #include <Task.h>
+#include <WiFi.h>
+#include <WiFiEventHandler.h>
 #include <AWS.h>
 #include "sdkconfig.h"
 #include "common.h"
@@ -18,26 +16,23 @@ using namespace std;
 
 static char LOG_TAG[] = "CDSTServer";
 
-/* wifi helper function definitions */
-void cdstWifiInit(void);
-
-// See the following for generating UUIDs:
-// https://www.uuidgenerator.net/
-// The remote service we wish to connect to.
-static BLEUUID serviceUUID("91bad492-b950-4226-aa2b-4ede9fa42f59");
-// The characteristic of the remote service we are interested in.
-static BLEUUID    charUUID("0d563a58-196a-48ce-ace2-dfec78acc814");
+/* AWS configs */
+char custom_endpoint[] = {"a23zuivoie0e9u.iot.us-east-2.amazonaws.com"};
+char clientID[] = AWS_IOT_MQTT_CLIENT_ID;
+static WiFi *wifi;
+AWS *aws;
 
 class MyCallbacks: public BLECharacteristicCallbacks {
 	void onWrite(BLECharacteristic *pCharacteristic) {
 		string value = pCharacteristic->getValue();
 		string ecgCheck = "a";
+		QoS qos = QOS0;
 
 		if(value.length() > 0) {
 			/* checking if ecg data */
 			if(value.substr(0, 1) == ecgCheck) {
 				/* publish to AWS IoT */
-				aws->publish("test", value, QOS0);
+				aws->publish("test", value, qos);
 			}
 
 			char buf[value.length()];
@@ -57,9 +52,25 @@ class MyCallbacks: public BLECharacteristicCallbacks {
 
 class MainBLEServer: public Task {
 	void run(void *data) {
+		/* AWS client establishes connection then publishes.	
+		 * Create AWS class def and intialize mqtt connection.
+		 */
+		ESP_LOGD(LOG_TAG, "Connecting to AWS REST http");
+		uint16_t port = 8883;
+
+		aws = new AWS();
+		aws->init(custom_endpoint, port);
+		ESP_LOGD(LOG_TAG, "AWS client initialized");
+		aws->connect(clientID, 5);
+		ESP_LOGD(LOG_TAG, "AWS client connected");
+
+		/* create BLE server and initialize callback
+		 * that receives from client
+		 */
 		ESP_LOGD(LOG_TAG, "Starting BLE!");
 
-		BLEDevice::init("ESP32");
+		BLEDevice::init("ESP32BT");
+
 		BLEServer* pServer = BLEDevice::createServer();
 
 		BLEService* pService = pServer->createService("91bad492-b950-4226-aa2b-4ede9fa42f59");
@@ -71,7 +82,7 @@ class MainBLEServer: public Task {
 			BLECharacteristic::PROPERTY_INDICATE
 		);
 
-		// pCharacteristic->setCallbacks(new MyCallbacks());
+		pCharacteristic->setCallbacks(new MyCallbacks());
 
 		pCharacteristic->setValue("What's Up World!");
 
@@ -90,16 +101,26 @@ class MainBLEServer: public Task {
 	}
 };
 
+/* Event handler that creats AWS task */
+class wiFiEventHandler: public WiFiEventHandler {
+    esp_err_t staGotIp(system_event_sta_got_ip_t event_sta_got_ip) {
+		ESP_LOGD(LOG_TAG, "MyWiFiEventHandler: Got IP");
+
+		/* set up BLE server */
+		MainBLEServer* pMainBleServer = new MainBLEServer();
+		pMainBleServer->setStackSize(18000);
+		pMainBleServer->start();
+
+		return ESP_OK;
+	}
+};
 
 void SampleServer(void)
 {
-	/* set up wifi and AWS client */
-	cdstWifiInit();
-	FreeRTOS::sleep(2000);
-
-	/* set up BLE server */
-	MainBLEServer* pMainBleServer = new MainBLEServer();
-	pMainBleServer->setStackSize(12000);
-	pMainBleServer->start();
+	/* setting up event handler and wifi struct */
+	wiFiEventHandler *eventHandler = new wiFiEventHandler();
+	wifi = new WiFi();
+	wifi->setWifiEventHandler(eventHandler);
+	wifi->connectAP(EAP_USERNAME, EAP_PASSWORD);
 
 } // app_main
